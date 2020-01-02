@@ -1,4 +1,5 @@
 //jshint esversion:6
+require("dotenv").config();
 const express = require("express");
 const ejs = require("ejs");
 const bodyParser = require("body-parser");
@@ -12,7 +13,7 @@ app.use(bodyParser.urlencoded({extended: true}));
 app.use(express.static("public"));
 app.set('view engine', 'ejs');
 
-mongoose.connect("mongodb://localhost:27017/userDB", {useNewUrlParser: true, useFindAndModify: false, useUnifiedTopology: true});
+mongoose.connect("mongodb://"+process.env.DB_HOST+":"+process.env.DB_PORT+"/"+process.env.DB_NAME, {useNewUrlParser: true, useFindAndModify: false, useUnifiedTopology: true});
 
 const userSchema = new mongoose.Schema({
   email: {
@@ -24,8 +25,7 @@ const userSchema = new mongoose.Schema({
     required: [true, "Password field can't be empty..."]
   }
 });
-const secret = "heyiwanttocreateasecretstring";
-userSchema.plugin(encrypt, {secret: secret, encryptedFields: ['password']});
+userSchema.plugin(encrypt, {secret: process.env.SECRET, encryptedFields: ['password']});
 const User = new mongoose.model('User', userSchema);
 
 app.get("/", (req, res) => {
@@ -67,14 +67,6 @@ app.route("/register")
       }
     })
   })
-
-
-
-
-
-
-
-
 
 app.listen(port, (err) => {
   if(!err){
