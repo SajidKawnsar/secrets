@@ -1,38 +1,50 @@
 //jshint esversion:6
 require("dotenv").config();
-const express = require("express");
-const ejs = require("ejs");
-const bodyParser = require("body-parser");
-const mongoose = require("mongoose");
-const bcrypt = require("bcrypt");
+const express = require("express"),
+      ejs = require("ejs"),
+      bodyParser = require("body-parser"),
+      mongoose = require("mongoose"),
+      session = require("express-session"),
+      passport = require("passport"),
+      passportLocalMongoose = require("passport-local-mongoose");
 
-const port = 3000;
-const app = express();
+const port = 3000,
+      app = express();
+
+app.set('view engine', 'ejs');
 
 app.use(bodyParser.urlencoded({
   extended: true
 }));
-app.use(express.static("public"));
-app.set('view engine', 'ejs');
+app.use(session({
+  secret: process.env.SECRET,
+  resave: false,
+  saveUninitialized: false
+}));
+app.use(passport.initialize());
+app.use(passport.session());
+
 
 mongoose.connect("mongodb://" + process.env.DB_HOST + ":" + process.env.DB_PORT + "/" + process.env.DB_NAME, {
   useNewUrlParser: true,
   useFindAndModify: false,
-  useUnifiedTopology: true
+  useUnifiedTopology: true,
+  useCreateIndex: true
 });
 
 const userSchema = new mongoose.Schema({
-  email: {
-    type: String,
-    required: [true, "Email field can't be empty..."]
-  },
+  username: String,
   password: {
-    type: String,
-    required: [true, "Password field can't be empty..."]
+    type: String
   }
 });
-
+userSchema.plugin(passportLocalMongoose, {errorMessages: true});
 const User = new mongoose.model('User', userSchema);
+
+passport.use(User.createStrategy());
+passport.serializeUser(User.serializeUser());
+passport.deserializeUser(User.deserializeUser());
+
 
 app.get("/", (req, res) => {
   res.render('home');
@@ -43,28 +55,16 @@ app.route("/login")
     res.render('login');
   })
   .post((req, res) => {
-    User.findOne({
-      email: req.body.username
-    }, (err, foundUser) => {
-      if (!err && foundUser) {
-
-        bcrypt.compare(req.body.password, foundUser.password, (err, result) => {
-          if (!err) {
-            if (result) {
-              res.render('secrets');
-            } else {
-              console.log("wrong password");
-              res.redirect("/login");
-            }
-
-
-          } else {
-            console.log(err);
-            res.redirect("/login");
-          }
+    const user = new User({
+      username: req.body.username,
+      password: req.body.password
+    });
+    req.login(user, (err) => {
+      if(!err){
+        passport.authenticate("local")(req, res, () => {
+          res.redirect("/secrets");
         });
-
-      } else {
+      }else{
         console.log(err);
         res.redirect("/login");
       }
@@ -76,29 +76,34 @@ app.route("/register")
     res.render('register');
   })
   .post((req, res) => {
-    bcrypt.hash(req.body.password, parseInt(process.env.SALT_ROUNDS), (err, passwordHash) => {
-      if (!err) {
-        const user = new User({
-          email: req.body.username,
-          password: passwordHash
+    User.register({username: req.body.username}, req.body.password, (err, registeredUser) => {
+      if(!err){
+        passport.authenticate("local")(req, res, () => {
+          res.redirect("/secrets");
         });
-        user.save((err) => {
-          if (!err) {
-            console.log("New user created successfully...");
-            res.render('secrets');
-          } else {
-            console.log(err);
-            res.redirect("/register");
-          }
-        });
-      } else {
+      }else{
         console.log(err);
         res.redirect("/register");
       }
-    });
+    }
+  );
 
 
   });
+
+app.get("/secrets", (req, res) => {
+  if(req.isAuthenticated()){
+    res.render('secrets');
+  }else{
+    res.redirect("/login");
+  }
+});
+
+app.get("/logout",(req, res) => {
+  req.logout();
+  res.redirect("/");
+});
+
 
 app.listen(port, (err) => {
   if (!err) {
